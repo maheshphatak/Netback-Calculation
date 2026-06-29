@@ -413,7 +413,8 @@ Use this **single** replacement everywhere the old `LOOP AT lt_prod_dshpex_op â€
 **Document:** `ZAPO_NTBK_DMD_DSHP_EXCLUDE_ZVTWEG_Sum_Correction.md`  
 **Path:** `Netback Calculation\`  
 **Author:** mahesh pathak / omkar more â€” CD 8085121 follow-up (ZVTWEG combined output)
-  TYPES: BEGIN OF lty_locdet,
+
+> **Update (29-Jun-2026):** See `ZAPO_NTBK_DMD_DSHP_EXCLUDE_AD1_Analysis_Corrections.md` for additional fixes: DC double-count when only one channel in input, BOM ratio, and multi-plant `NTBK_LOCFR` summation.
          matnr TYPE /sapapo/matnr,
          locno TYPE /sapapo/locno,
          mfg_plant TYPE /sapapo/locno,
