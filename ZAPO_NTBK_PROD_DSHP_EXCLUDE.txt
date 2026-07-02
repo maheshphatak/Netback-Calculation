@@ -1,0 +1,979 @@
+FUNCTION ZAPO_NTBK_PROD_DSHP_EXCLUDE
+  IMPORTING
+    VALUE(IS_SESSION) TYPE ZAPO_SESSION_DETAIL
+    VALUE(IT_INPUT) TYPE ZAPO_NTBK_REF_T
+    VALUE(IT_MATKEY) TYPE ZAPO_NTBK_MATKEY_T OPTIONAL
+    VALUE(IT_LOC) TYPE ZAPO_NTBK_LOC_T OPTIONAL
+    VALUE(IT_DRV_MATNR) TYPE ZLOG_NTBK_GET_MATNR_T OPTIONAL
+  EXPORTING
+    VALUE(ET_INTOUT) TYPE ZAPO_NTBK_PROD_T
+    VALUE(ET_OUTPUT) TYPE ZAPO_NTBK_DETAIL_T
+    VALUE(ET_RETURN) TYPE BAPIRET2_T.
+
+
+
+
+  """Note: This FM is copied from FM:ZAPO_NTBK_PROD for calulation of planned delivery quantity DC wise in this new FM.
+
+  " start of copied FM logic from old FM:ZAPO_NTBK_PROD
+* Types Declaration
+  TYPES: BEGIN OF lty_snpoppma,
+         sessionid TYPE	/sapapo/snpsession,
+         proid     TYPE /sapapo/snpproid,
+         matid     TYPE /sapapo/matid,
+         locid     TYPE  /sapapo/locid,
+         outin     TYPE /sapapo/snpoutin,
+         END OF lty_snpoppma,
+
+         BEGIN OF lty_snpoppro,
+          sessionid TYPE  /sapapo/snpsession,
+          proid	TYPE /sapapo/guid,
+          valfr	TYPE /sapapo/msdp_opt_valfr_c,
+          valto	TYPE /sapapo/snpvalto,
+          produ	TYPE /sapapo/snpprodu,
+         END  OF  lty_snpoppro,
+
+         BEGIN OF lty_snpopbct,
+          sessionid TYPE  /sapapo/snpsession,
+          bucke	TYPE /sapapo/snpbucke,
+          valto	TYPE /sapapo/snpvalto,
+          valfr	TYPE /sapapo/snpvalfr,
+         END OF   lty_snpopbct,
+
+          BEGIN OF lty_snpoppro_1,
+          sessionid TYPE  /sapapo/snpsession,
+          valfr	TYPE /sapapo/snpvalto,
+         END  OF  lty_snpoppro_1,
+
+         BEGIN OF lty_zapoparam,
+           mandt        TYPE mandt,
+           param1       TYPE zparam1,
+           param2       TYPE zparam2,
+           param3       TYPE zparam3,
+           param4       TYPE zparam4,
+           param5       TYPE zparam5,
+           value1	      TYPE zparamvalue1,
+           value2       TYPE zparamvalue2,
+           active_flag  TYPE zactive_flag,
+         END OF  lty_zapoparam,
+
+         BEGIN OF lty_/sapapo/snpopdmn,
+           mandt      TYPE  /sapapo/clntapo_mandt,
+           sessionid  TYPE  /sapapo/snpsession,
+           line_no    TYPE  /sapapo/snpopt_line_no,
+           locid      TYPE  /sapapo/locid,
+           matid      TYPE  /sapapo/snpmatid,
+           bucke      type  /sapapo/snpbucke, "* BEGIN: Cursor Generated Code <- bucket 21.01.2026 / author - omkar more CD:8087269 TR:AD1K917472
+           deliv      TYPE  /sapapo/snpdeliv,
+         END OF lty_/sapapo/snpopdmn,
+
+         BEGIN OF lty_/sapapo/loc,
+           mandt TYPE	 mandt,
+           locid TYPE /sapapo/locid,
+           locno TYPE /sapapo/locno,
+         END OF lty_/sapapo/loc,
+
+         BEGIN OF lty_dummy,
+           locid  TYPE /sapapo/locid,
+           deliv  TYPE  /sapapo/snpdeliv,
+         END OF lty_dummy.
+
+  DATA:   ls_snpoppro TYPE  lty_snpoppro,
+          lt_zapoparam        TYPE TABLE OF lty_zapoparam,
+          lt_zapoparam_temp   TYPE TABLE OF lty_zapoparam,
+          lt_dcdrv            TYPE zapo_location_tt,
+          lv_demand_qty       TYPE /sapapo/snpdeliv,
+          lt_/sapapo/snpopdmn TYPE TABLE OF lty_/sapapo/snpopdmn,
+          lt_/sapapo/snpopdmn_dummy TYPE TABLE OF lty_/sapapo/snpopdmn,
+          lw_/sapapo/snpopdmn TYPE lty_/sapapo/snpopdmn,
+          lw_dcdrv     TYPE zapo_location,
+          lt_/sapapo/loc TYPE TABLE OF lty_/sapapo/loc, "added by omkar more/mahesh pathak on 04.12.2025  CD:8085121 TR:AD1K917417
+          lt_/sapapo/loc_1 TYPE TABLE OF lty_/sapapo/loc, "added by omkar more/mahesh pathak on 04.12.2025  CD:8085121 TR:AD1K917417
+          lw_/sapapo/loc_1 TYPE lty_/sapapo/loc, "added by omkar more/mahesh pathak on 04.12.2025  CD:8085121 TR:AD1K917417
+          lw_/sapapo/loc TYPE lty_/sapapo/loc,
+          lw_zapoparam TYPE lty_zapoparam.
+
+  TYPES:  BEGIN OF lty_snpopbct_con.
+          INCLUDE STRUCTURE  ls_snpoppro.
+  TYPES:  bucke  TYPE /sapapo/snpbucke,
+          END  OF  lty_snpopbct_con.
+
+" BEGIN: Cursor Generated Code - Bucket-wise demand summary type 21.01.2026 / author - omkar more CD:8087269 TR:AD1K917472
+  TYPES: BEGIN OF lty_demand_by_bucke,
+           matid                TYPE /sapapo/matid,
+           bucke                TYPE /sapapo/snpbucke,
+           domestic_qty         TYPE /sapapo/snpdeliv,
+           export_qty           TYPE /sapapo/snpdeliv,
+           non_domes_export_qty TYPE /sapapo/snpdeliv,
+           dummy_qty            TYPE /sapapo/snpdeliv,
+         END OF lty_demand_by_bucke.
+
+  TYPES: BEGIN OF lty_demand_by_month,
+           matid                TYPE /sapapo/matid,
+           date_mthyr           TYPE /bi0/oicalmonth,
+           domestic_qty         TYPE /sapapo/snpdeliv,
+           export_qty           TYPE /sapapo/snpdeliv,
+           non_domes_export_qty TYPE /sapapo/snpdeliv,
+           dummy_qty            TYPE /sapapo/snpdeliv,
+         END OF lty_demand_by_month.
+" END: Cursor Generated Code 21.01.2026 / author - omkar more CD:8087269 TR:AD1K917472
+
+** Data Declaration
+  DATA: lt_snpoppma TYPE TABLE OF lty_snpoppma,
+        lt_snpoppma_tmp TYPE TABLE OF lty_snpoppma,
+        lt_snpoppro TYPE TABLE OF lty_snpoppro,
+        lt_snpoppro_tmp TYPE TABLE OF lty_snpoppro_1,
+        lt_snpopbct TYPE TABLE OF lty_snpopbct,
+        lt_snpopbct_tmp TYPE TABLE OF lty_snpopbct,
+        lt_snpopbct_con TYPE TABLE OF lty_snpopbct_con,
+        lt_matkey TYPE TABLE OF zapo_ntbk_matkey,
+        lr_matnr TYPE RANGE OF /sapapo/matnr,
+        lr_matid TYPE RANGE OF /sapapo/matid,
+        lr_locid TYPE RANGE OF /sapapo/locid,
+        lrt_locid_1 TYPE RANGE OF /sapapo/locid,
+        lrt_locid_2 TYPE RANGE OF /sapapo/locid,
+        lwr_locid_1 LIKE LINE OF lrt_locid_1,
+        ltr_locno   TYPE RANGE OF /sapapo/locno,
+        lwr_locno   LIKE LINE OF ltr_locno,
+        lv_ntbk_index TYPE zapo_ntbk_index,
+        lt_plandrv TYPE TABLE OF zapo_plndrv,
+        lt_output_tmp TYPE TABLE OF zapo_ntbk_detail,
+        lt_output_tmp1 TYPE TABLE OF zapo_ntbk_detail,
+        lw_snpoplpr TYPE zapo_ntbk_snpoplpr,
+        lw_output TYPE zapo_ntbk_detail,
+        lw_output1 TYPE zapo_ntbk_detail,
+        lv_final_qty TYPE zapo_ntbk_qty,
+        lv_domestic_qty TYPE zapo_ntbk_qty,
+        lv_dummy_qty    TYPE zapo_ntbk_qty,
+        lv_demand_plus_dummy_qty    TYPE zapo_ntbk_qty,
+        lv_demand_plus_promo_qty    TYPE zapo_ntbk_qty,
+        lv_export_qty   TYPE zapo_ntbk_qty,
+        lv_non_domes_export_qty   TYPE zapo_ntbk_qty, "added by omkar more/mahesh pathak on 04.12.2025  CD:8085121 TR:AD1K917417
+        lw_output_1 TYPE zapo_ntbk_prod,
+        lw_snpoppro TYPE lty_snpopbct_con,
+        lw_locid TYPE /sapapo/locid,
+        lw_matid TYPE /sapapo/matid,
+        lt_ref TYPE TABLE OF zapo_ntbk_ref,
+        lw_valfr TYPE /sapapo/snpvalto,
+        lv_tabix TYPE sy-tabix,
+        lv_tabix2 TYPE sy-tabix,
+        lv_pattern TYPE /sapapo/locno,
+        lv_dummy   TYPE /sapapo/locno,
+        lt_intout TYPE zapo_ntbk_prod_t.
+" BEGIN: Cursor Generated Code - Bucket-wise demand summary data 21.01.2026 / author - omkar more CD:8087269 TR:AD1K917472
+  DATA: lt_demand_by_bucke TYPE TABLE OF lty_demand_by_bucke,
+        lw_demand_by_bucke TYPE lty_demand_by_bucke,
+        lt_demand_by_month TYPE TABLE OF lty_demand_by_month,
+        lw_demand_by_month TYPE lty_demand_by_month.
+" END: Cursor Generated Code 21.01.2026 / author - omkar more CD:8087269 TR:AD1K917472
+** Field Symbol Declaration
+  FIELD-SYMBOLS: <lfs_snpoppma> TYPE  lty_snpoppma,
+                  <lfs_snpopbct> TYPE lty_snpopbct,
+                  <lfs_snpoppro>  TYPE lty_snpoppro,
+                 <lfs_snpoppro_1>  TYPE lty_snpoppro_1,
+                 <lfs_snpopbct_con> TYPE lty_snpopbct_con,
+                 <lfs_loc> TYPE zapo_ntbk_loc,
+                 <lfs_drv_matnr> TYPE zlog_ntbk_get_matnr,
+                 <lfs_matkey>  TYPE zapo_ntbk_matkey,
+                 <lfs_matid> LIKE LINE OF lr_matid,
+                 <lfs_locid> LIKE LINE OF lr_locid,
+                 <lfs_plandrv> TYPE zapo_plndrv,
+                 <lfs_input> TYPE zapo_ntbk_ref,
+                 <lfs_output> TYPE  zapo_ntbk_detail,
+                   <lfs_ref> TYPE zapo_ntbk_ref,
+                 <lfs_demand_by_bucke> TYPE lty_demand_by_bucke, "* BEGIN: Cursor Generated Code <- field symbol declared 21.01.2026 / author - omkar more CD:8087269 TR:AD1K917472
+                 <lfs_demand_by_month> TYPE lty_demand_by_month. "* BEGIN: Cursor Generated Code <- field symbol declared 21.01.2026 / author - omkar more CD:8087269 TR:AD1K917472
+
+  IF is_session-sessionid IS NOT INITIAL AND it_input IS NOT INITIAL.
+" start of new logic FM  by omkar more on 21.08.2025 CD:8085120 TR:AD1K917351
+    CLEAR lt_zapoparam[].
+    SELECT  mandt
+            param1
+            param2
+            param3
+            param4
+            param5
+            value1
+            value2
+            active_flag
+    FROM zapoparam CLIENT SPECIFIED
+    INTO TABLE lt_zapoparam
+    WHERE mandt       = sy-mandt
+    AND   param1      = 'SNP'
+    AND   param2      = 'ZAPO_NTBK'
+    AND   param3      = 'SHP_EXCLUDE'
+    AND   active_flag = abap_true.
+    IF sy-subrc = 0.
+
+      CLEAR lt_zapoparam_temp[].
+      lt_zapoparam_temp = lt_zapoparam.
+      DELETE lt_zapoparam_temp WHERE value2 IS INITIAL.
+      SORT   lt_zapoparam_temp BY value2.
+      DELETE ADJACENT DUPLICATES FROM lt_zapoparam_temp COMPARING value2.
+      IF lt_zapoparam_temp IS NOT INITIAL.
+
+        CLEAR ltr_locno[].
+        lwr_locno-sign   = 'I'.
+        lwr_locno-option = 'CP'.
+        LOOP AT lt_zapoparam_temp INTO lw_zapoparam.
+
+          CLEAR lv_pattern.
+          SPLIT lw_zapoparam-value2 AT '*' INTO lv_pattern lv_dummy.
+          CONCATENATE lv_pattern '*' INTO lv_pattern.
+          lwr_locno-low = lv_pattern.
+          APPEND lwr_locno TO ltr_locno.
+          CLEAR lwr_locno-low.
+        ENDLOOP.
+
+      ENDIF.
+
+      IF ltr_locno[] IS NOT INITIAL.
+        CLEAR lt_/sapapo/loc[].
+        SELECT mandt
+               locid
+               locno
+        FROM /sapapo/loc CLIENT SPECIFIED
+        INTO TABLE lt_/sapapo/loc
+        WHERE mandt = sy-mandt
+        AND   locno IN ltr_locno[].
+        IF sy-subrc = 0.
+          SORT lt_/sapapo/loc BY locid.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+    " end of new logic FM  by omkar more on 21.08.2025 CD:8085120 TR:AD1K917351
+
+    " start of copied FM logic from old FM:ZAPO_NTBK_PROD
+    LOOP AT  it_loc ASSIGNING <lfs_loc>.
+      APPEND INITIAL LINE TO lr_locid ASSIGNING <lfs_locid>.
+      <lfs_locid>-sign = 'I'.
+      <lfs_locid>-option = 'EQ'.
+      <lfs_locid>-low = <lfs_loc>-locid.
+    ENDLOOP.
+
+    LOOP AT it_matkey ASSIGNING <lfs_matkey>.
+      APPEND INITIAL LINE TO lr_matid ASSIGNING <lfs_matid>.
+      <lfs_matid>-sign = 'I'.
+      <lfs_matid>-option = 'EQ'.
+      <lfs_matid>-low = <lfs_matkey>-matid..
+    ENDLOOP.
+
+    SORT lr_locid BY low.
+    DELETE ADJACENT DUPLICATES FROM lr_locid COMPARING low.
+
+    SORT lr_matid  BY low.
+    DELETE ADJACENT DUPLICATES FROM lr_matid  COMPARING low.
+
+    " end of copied FM logic from old FM:ZAPO_NTBK_PROD
+
+    " start of new logic FM  by omkar more on 21.08.2025 CD:8085120 TR:AD1K917351
+    REFRESH lt_/sapapo/snpopdmn.
+    SELECT  mandt
+            sessionid
+            line_no
+            locid
+            matid
+            bucke "* BEGIN: Cursor Generated Code <- bucket field fetched 21.01.2026 / author - omkar more CD:8087269 TR:AD1K917472
+            deliv
+    FROM /sapapo/snpopdmn CLIENT SPECIFIED
+    INTO TABLE lt_/sapapo/snpopdmn
+    WHERE mandt      = sy-mandt
+    AND   sessionid  = is_session-sessionid.
+    IF sy-subrc = 0.
+      DELETE lt_/sapapo/snpopdmn WHERE deliv IS INITIAL.
+      IF lr_matid[] IS NOT INITIAL.
+        DELETE lt_/sapapo/snpopdmn WHERE matid NOT IN lr_matid[].
+      ENDIF.
+      CLEAR:   lwr_locid_1,lv_demand_qty.
+      REFRESH lrt_locid_1[].
+      lwr_locid_1-sign   = 'I'.
+      lwr_locid_1-option = 'EQ'.
+      LOOP AT lt_/sapapo/snpopdmn INTO lw_/sapapo/snpopdmn.
+        lwr_locid_1-low = lw_/sapapo/snpopdmn-locid.
+        APPEND lwr_locid_1 TO lrt_locid_1.
+        CLEAR lwr_locid_1-low.
+      ENDLOOP.
+      SORT lt_/sapapo/snpopdmn BY matid bucke.
+    ENDIF.
+  ENDIF.
+  " end of new logic FM  by omkar more on 21.08.2025 CD:8085120 TR:AD1K917351
+
+  " start of copied FM logic from old FM:ZAPO_NTBK_PROD
+  IF lrt_locid_1[] IS NOT INITIAL.
+    CALL FUNCTION 'ZAPO_NTBK_DCDRV'
+      EXPORTING
+        it_locid = lrt_locid_1
+      IMPORTING
+        et_dc    = lt_dcdrv.
+
+    SORT lt_dcdrv BY locid.
+  ENDIF.
+
+" BEGIN: Cursor Generated Code - Pre-build bucket-wise demand summary 21.01.2026 / author - omkar more CD:8087269 TR:AD1K917472
+  " Pre-compute demand totals per (matid + bucke) using READ TABLE + INSERT
+  " Note: COLLECT cannot be used because /sapapo/snpbucke is integer type (I),
+  "       and COLLECT sums all numeric fields including BUCKE instead of grouping by it
+  IF lt_/sapapo/snpopdmn IS NOT INITIAL.
+    LOOP AT lt_/sapapo/snpopdmn INTO lw_/sapapo/snpopdmn.
+      CLEAR lw_demand_by_bucke.
+      lw_demand_by_bucke-matid = lw_/sapapo/snpopdmn-matid.
+      lw_demand_by_bucke-bucke = lw_/sapapo/snpopdmn-bucke.
+
+      CLEAR lw_dcdrv.
+      READ TABLE lt_dcdrv INTO lw_dcdrv WITH KEY locid = lw_/sapapo/snpopdmn-locid BINARY SEARCH.
+      IF sy-subrc = 0 AND lw_dcdrv-zvtweg EQ '10'. " Domestic
+        lw_demand_by_bucke-domestic_qty = lw_/sapapo/snpopdmn-deliv.
+      ELSEIF lw_dcdrv-zvtweg EQ '15' OR lw_dcdrv-zvtweg EQ '20' OR lw_dcdrv-zvtweg EQ '25'. " Export (15/20/25)
+        lw_demand_by_bucke-export_qty = lw_/sapapo/snpopdmn-deliv.
+      ELSE. " Non domestic and non export
+        lw_demand_by_bucke-non_domes_export_qty = lw_/sapapo/snpopdmn-deliv.
+      ENDIF.
+
+      READ TABLE lt_/sapapo/loc TRANSPORTING NO FIELDS WITH KEY locid = lw_/sapapo/snpopdmn-locid BINARY SEARCH.
+      IF sy-subrc = 0.
+        lw_demand_by_bucke-dummy_qty = lw_/sapapo/snpopdmn-deliv.
+      ENDIF.
+
+      " Aggregate using READ TABLE + ASSIGNING (BUCKE is integer, COLLECT would sum it)
+      READ TABLE lt_demand_by_bucke ASSIGNING <lfs_demand_by_bucke>
+        WITH KEY matid = lw_/sapapo/snpopdmn-matid
+                 bucke = lw_/sapapo/snpopdmn-bucke BINARY SEARCH.
+      IF sy-subrc = 0 AND <lfs_demand_by_bucke> IS ASSIGNED.
+        " Entry exists: add quantities to existing bucket totals
+        <lfs_demand_by_bucke>-domestic_qty         = <lfs_demand_by_bucke>-domestic_qty         + lw_demand_by_bucke-domestic_qty.
+        <lfs_demand_by_bucke>-export_qty           = <lfs_demand_by_bucke>-export_qty           + lw_demand_by_bucke-export_qty.
+        <lfs_demand_by_bucke>-non_domes_export_qty = <lfs_demand_by_bucke>-non_domes_export_qty + lw_demand_by_bucke-non_domes_export_qty.
+        <lfs_demand_by_bucke>-dummy_qty            = <lfs_demand_by_bucke>-dummy_qty            + lw_demand_by_bucke-dummy_qty.
+      ELSE.
+        " New (matid + bucke): insert at sy-tabix to maintain sort order
+        INSERT lw_demand_by_bucke INTO lt_demand_by_bucke INDEX sy-tabix.
+      ENDIF.
+    ENDLOOP.
+  ENDIF.
+" END: Cursor Generated Code - Pre-build bucket-wise demand summary 21.01.2026 / author - omkar more CD:8087269 TR:AD1K917472
+  IF lr_matid IS NOT INITIAL OR lr_locid IS NOT INITIAL.
+    SELECT sessionid
+           proid
+           matid
+           locid
+           outin
+      FROM /sapapo/snpoppma
+      INTO TABLE lt_snpoppma
+      WHERE sessionid = is_session-sessionid
+       AND ( matid IN lr_matid OR locid IN lr_locid ) .
+    IF sy-subrc = 0.
+      DELETE lt_snpoppma WHERE outin < 0.
+      lt_snpoppma_tmp = lt_snpoppma.
+      SORT lt_snpoppma_tmp BY sessionid proid.
+      DELETE ADJACENT DUPLICATES FROM lt_snpoppma_tmp COMPARING sessionid proid.
+      IF lt_snpoppma_tmp IS NOT INITIAL.
+        SELECT sessionid
+               proid
+               valfr
+               valto
+               produ
+          FROM /sapapo/snpoppro
+          INTO TABLE lt_snpoppro
+          FOR ALL ENTRIES IN lt_snpoppma_tmp
+          WHERE sessionid = lt_snpoppma_tmp-sessionid
+            AND proid = lt_snpoppma_tmp-proid.
+        IF sy-subrc = 0.
+
+          LOOP AT lt_snpoppro ASSIGNING <lfs_snpoppro>.
+            APPEND INITIAL LINE TO lt_snpoppro_tmp ASSIGNING <lfs_snpoppro_1>.
+            <lfs_snpoppro_1>-sessionid = <lfs_snpoppro>-sessionid.
+            <lfs_snpoppro_1>-valfr = <lfs_snpoppro>-valfr.
+          ENDLOOP.
+
+          SORT lt_snpoppro_tmp BY sessionid valfr.
+          DELETE ADJACENT DUPLICATES FROM lt_snpoppro_tmp COMPARING sessionid valfr.
+          IF lt_snpoppro_tmp IS NOT INITIAL.
+            SELECT sessionid
+                   bucke
+                   valto
+                   valfr
+              FROM /sapapo/snpopbct
+              INTO TABLE lt_snpopbct
+              FOR ALL ENTRIES IN lt_snpoppro_tmp
+              WHERE sessionid = lt_snpoppro_tmp-sessionid
+              AND ( ( valfr < lt_snpoppro_tmp-valfr AND valto > lt_snpoppro_tmp-valfr )
+              OR ( valfr = lt_snpoppro_tmp-valfr OR valto = lt_snpoppro_tmp-valfr ) ) .
+            IF sy-subrc = 0.
+              LOOP AT lt_snpoppro ASSIGNING <lfs_snpoppro>.
+                CLEAR: lw_snpoppro, lw_valfr.
+                lw_valfr = <lfs_snpoppro>-valfr.
+                MOVE-CORRESPONDING <lfs_snpoppro> TO lw_snpoppro.
+                LOOP AT lt_snpopbct ASSIGNING <lfs_snpopbct>.
+                  IF ( lw_valfr > <lfs_snpopbct>-valfr AND lw_valfr < <lfs_snpopbct>-valto ) OR
+                    ( lw_valfr = <lfs_snpopbct>-valfr OR lw_valfr = <lfs_snpopbct>-valto ) .
+                    lw_snpoppro-bucke = <lfs_snpopbct>-bucke.
+                    APPEND lw_snpoppro TO lt_snpopbct_con.
+                  ENDIF.
+                ENDLOOP.
+              ENDLOOP.
+              lt_snpopbct_tmp = lt_snpopbct.
+              SORT lt_snpopbct_tmp BY sessionid bucke.
+              DELETE ADJACENT DUPLICATES FROM lt_snpopbct_tmp COMPARING sessionid bucke.
+              IF lt_snpopbct_tmp IS NOT INITIAL.
+
+                CALL FUNCTION 'ZAPO_NTBK_PLNDRV'
+                  EXPORTING
+                    is_session = is_session
+                  IMPORTING
+                    et_plandrv = lt_plandrv.
+                IF lt_plandrv IS NOT INITIAL.
+
+                  LOOP AT lt_plandrv ASSIGNING <lfs_plandrv>.
+                    READ TABLE lt_snpopbct_tmp WITH KEY sessionid = <lfs_plandrv>-sessionid
+                                                        bucke = <lfs_plandrv>-bucke BINARY SEARCH TRANSPORTING NO FIELDS.
+                    IF sy-subrc NE 0.
+                      CLEAR <lfs_plandrv>-sessionid.
+                    ENDIF.
+                  ENDLOOP.
+                  DELETE lt_plandrv WHERE sessionid IS INITIAL.
+
+                  " BEGIN: Cursor Generated Code - Build month-level demand summary from bucket-level + plandrv mapping 21.01.2026 / author - omkar more CD:8087269 TR:AD1K917472
+                  SORT lt_plandrv BY bucke. " Sort for BINARY SEARCH in demand redistribution
+                  " Aggregate lt_demand_by_bucke into lt_demand_by_month using bucket-to-month from lt_plandrv
+                  CLEAR lt_demand_by_month[].
+                  LOOP AT lt_demand_by_bucke INTO lw_demand_by_bucke.
+                    READ TABLE lt_plandrv ASSIGNING <lfs_plandrv>
+                      WITH KEY bucke = lw_demand_by_bucke-bucke BINARY SEARCH.
+                    IF sy-subrc = 0.
+                      CLEAR lw_demand_by_month.
+                      lw_demand_by_month-matid      = lw_demand_by_bucke-matid.
+                      lw_demand_by_month-date_mthyr = <lfs_plandrv>-date_mthyr.
+                      lw_demand_by_month-domestic_qty         = lw_demand_by_bucke-domestic_qty.
+                      lw_demand_by_month-export_qty           = lw_demand_by_bucke-export_qty.
+                      lw_demand_by_month-non_domes_export_qty = lw_demand_by_bucke-non_domes_export_qty.
+                      lw_demand_by_month-dummy_qty            = lw_demand_by_bucke-dummy_qty.
+
+                      " Aggregate by (matid, month) using READ TABLE + INSERT pattern
+                      READ TABLE lt_demand_by_month ASSIGNING <lfs_demand_by_month>
+                        WITH KEY matid      = lw_demand_by_month-matid
+                                 date_mthyr = lw_demand_by_month-date_mthyr BINARY SEARCH.
+                      IF sy-subrc = 0 AND <lfs_demand_by_month> IS ASSIGNED.
+                        <lfs_demand_by_month>-domestic_qty         = <lfs_demand_by_month>-domestic_qty         + lw_demand_by_month-domestic_qty.
+                        <lfs_demand_by_month>-export_qty           = <lfs_demand_by_month>-export_qty           + lw_demand_by_month-export_qty.
+                        <lfs_demand_by_month>-non_domes_export_qty = <lfs_demand_by_month>-non_domes_export_qty + lw_demand_by_month-non_domes_export_qty.
+                        <lfs_demand_by_month>-dummy_qty            = <lfs_demand_by_month>-dummy_qty            + lw_demand_by_month-dummy_qty.
+                      ELSE.
+                        INSERT lw_demand_by_month INTO lt_demand_by_month INDEX sy-tabix.
+                      ENDIF.
+                    ENDIF.
+                  ENDLOOP.
+" END: Cursor Generated Code - Build month-level demand summary
+
+
+                  REFRESH lt_/sapapo/loc_1.   "added by omkar more/mahesh pathak on 04.12.2025  CD:8085121 TR:AD1K917417
+                  lt_/sapapo/loc_1  = lt_/sapapo/loc.
+                  SORT lt_/sapapo/loc_1 BY locid locno.
+                  LOOP AT it_input ASSIGNING <lfs_input>.
+                    CLEAR: lw_output, lw_locid, lw_matid, lt_ref, lt_intout.
+
+                    CALL FUNCTION 'ZAPO_NTBK_COMB_PREPARE'
+                      EXPORTING
+                        is_input     = <lfs_input>
+                        it_drv_matnr = it_drv_matnr
+                      IMPORTING
+                        et_out       = lt_ref.
+                    MOVE-CORRESPONDING <lfs_input> TO lw_output.
+                    CLEAR:lw_output-ntbk_index.
+                    LOOP AT lt_ref ASSIGNING <lfs_ref>.
+                      CLEAR: lw_locid, lw_matid, lw_output_1.
+                      MOVE-CORRESPONDING <lfs_ref> TO  lw_output_1.
+                      IF <lfs_ref>-ntbk_locfr IS NOT INITIAL.
+                        READ TABLE it_loc ASSIGNING <lfs_loc> WITH KEY locno = <lfs_ref>-ntbk_locfr .
+                        IF sy-subrc = 0 AND <lfs_loc> IS ASSIGNED.
+                          lw_locid = <lfs_loc>-locid.
+                        ENDIF.
+                      ENDIF.
+
+                      IF <lfs_ref>-ntbk_matnr IS NOT INITIAL.
+                        READ TABLE it_matkey ASSIGNING <lfs_matkey> WITH KEY matnr = <lfs_ref>-ntbk_matnr .
+                        IF sy-subrc = 0 AND <lfs_matkey> IS ASSIGNED.
+                          lw_matid = <lfs_matkey>-matid.
+                        ENDIF.
+                      ENDIF.
+                      IF <lfs_ref>-ntbk_matnr IS NOT INITIAL AND <lfs_ref>-ntbk_locfr IS NOT INITIAL.
+                        LOOP AT  lt_snpoppma ASSIGNING <lfs_snpoppma> WHERE sessionid = is_session-sessionid
+                                                                        AND matid = lw_matid
+                                                                        AND locid = lw_locid.
+                          LOOP AT lt_snpopbct_con ASSIGNING <lfs_snpopbct_con> WHERE sessionid = <lfs_snpoppma>-sessionid
+                                                                                AND proid = <lfs_snpoppma>-proid.
+
+                            LOOP AT lt_plandrv ASSIGNING <lfs_plandrv> WHERE sessionid = <lfs_snpoppma>-sessionid
+                                                                         AND bucke = <lfs_snpopbct_con>-bucke .
+                              lw_output-ntbk_mth = <lfs_plandrv>-date_mthyr.
+                              lw_output-ntbk_qty     =  <lfs_snpoppma>-outin *  <lfs_snpopbct_con>-produ.
+                              lw_output_1-ntbk_matnr = <lfs_ref>-ntbk_matnr .
+                              lw_output_1-ntbk_locfr = <lfs_ref>-ntbk_locfr.
+                              lw_output_1-spart = <lfs_ref>-div.
+                              lw_output_1-prodh1 = <lfs_ref>-pdh1.
+                              lw_output_1-prodh2 = <lfs_ref>-pdh2.
+                              lw_output_1-bucke = <lfs_snpopbct_con>-bucke.
+                              lw_output_1-prodn = lw_output-ntbk_qty.
+                              CONDENSE lw_output_1-bucke.
+                              COLLECT lw_output_1 INTO lt_intout.
+                              COLLECT lw_output INTO  lt_output_tmp.
+                            ENDLOOP.
+                          ENDLOOP.
+                        ENDLOOP.
+                        " end of copied FM logic from old FM:ZAPO_NTBK_PROD
+
+                        CLEAR lw_output1.
+                        READ TABLE lt_/sapapo/snpopdmn TRANSPORTING NO FIELDS WITH KEY matid = lw_matid BINARY SEARCH.
+                        IF sy-subrc = 0.
+                          lv_tabix = sy-tabix.
+
+                          LOOP AT lt_/sapapo/snpopdmn INTO lw_/sapapo/snpopdmn FROM lv_tabix.
+                            IF lw_/sapapo/snpopdmn-matid NE lw_matid.
+                              EXIT.
+                            ENDIF.
+"* BEGIN: Cursor Generated Code <- monthwise demand totals calculation 21.01.2026 / author - omkar more CD:8087269 TR:AD1K917472
+                            " Get month for this bucket from plandrv
+                            READ TABLE lt_plandrv ASSIGNING <lfs_plandrv>
+                              WITH KEY bucke = lw_/sapapo/snpopdmn-bucke BINARY SEARCH.
+                            IF sy-subrc NE 0.
+                              CONTINUE.
+                            ENDIF.
+
+                            " Get MONTH-level demand totals from pre-built summary
+                            CLEAR lw_demand_by_month.
+                            READ TABLE lt_demand_by_month INTO lw_demand_by_month
+                              WITH KEY matid      = lw_matid
+                                       date_mthyr = <lfs_plandrv>-date_mthyr BINARY SEARCH.
+                            IF sy-subrc NE 0.
+                            CONTINUE.
+                            ENDIF.
+
+                            lv_domestic_qty         = lw_demand_by_month-domestic_qty.
+                            lv_export_qty           = lw_demand_by_month-export_qty.
+                            lv_non_domes_export_qty = lw_demand_by_month-non_domes_export_qty.
+                            lv_dummy_qty            = lw_demand_by_month-dummy_qty.
+                            lv_demand_qty           = lv_domestic_qty + lv_export_qty + lv_non_domes_export_qty.
+                            IF lv_demand_qty IS INITIAL.
+                            CONTINUE.
+                            ENDIF.
+
+                            CLEAR: lv_demand_plus_promo_qty, lv_demand_plus_dummy_qty, lw_output.
+                            " Read production for the correct month
+                            READ TABLE lt_output_tmp INTO lw_output
+                              WITH KEY ntbk_matnr = <lfs_ref>-ntbk_matnr
+                                       ntbk_mth   = <lfs_plandrv>-date_mthyr.
+                              IF sy-subrc = 0.
+                              lw_output1-ntbk_mth = lw_output-ntbk_mth.
+"* END: Cursor Generated Code <- monthwise demand totals calculation 21.01.2026 / author - omkar more CD:8087269 TR:AD1K917472
+                              CLEAR lw_dcdrv.
+                              READ TABLE lt_dcdrv INTO lw_dcdrv WITH KEY locid = lw_/sapapo/snpopdmn-locid BINARY SEARCH.
+                              IF sy-subrc = 0.
+
+                                CASE lw_dcdrv-zvtweg.
+                                  WHEN 10. " DOMESTIC
+                                    "soc by omkar more/mahesh pathak on 04.12.2025  CD:8085121 TR:AD1K917417
+                                    READ TABLE lt_/sapapo/loc_1 TRANSPORTING NO FIELDS WITH KEY locid = lw_dcdrv-locid
+                                                                                                locno = lw_dcdrv-locno BINARY SEARCH.
+                                    IF sy-subrc = 0.
+                                      lv_demand_plus_promo_qty = ( lv_domestic_qty - lv_dummy_qty ) * lw_output-ntbk_qty.
+                                    ELSE.
+                                      lv_demand_plus_promo_qty = ( lv_domestic_qty * lw_output-ntbk_qty ).
+                                    ENDIF.
+                                    "eoc by omkar more/mahesh pathak on 04.12.2025  CD:8085121 TR:AD1K917417
+
+                                    lv_demand_plus_dummy_qty = ( lv_demand_qty - lv_dummy_qty ).
+                                    IF lv_demand_plus_dummy_qty NE 0.
+                                      lw_output1-ntbk_qty      = lv_demand_plus_promo_qty / lv_demand_plus_dummy_qty.
+                                    ENDIF.
+                                    lw_output1-zvtweg        = lw_dcdrv-zvtweg.
+                                    lw_output1-ntbk_cat      = lw_output-ntbk_cat.
+                                    lw_output1-ntbk_logic    = lw_output-ntbk_logic.
+                                    lw_output1-ntbk_site     = lw_output-ntbk_site.
+                                    lw_output1-ntbk_matnr    = lw_output-ntbk_matnr.
+                                    lw_output1-ntbk_locfr    = lw_output-ntbk_locfr.
+
+                                    APPEND lw_output1 TO lt_output_tmp1.
+                                    CLEAR  lw_output1.
+                                  WHEN 15. " EXPORT
+                                  WHEN 20. " EXPORT (same as 15 — avoid OTHERS double qty)
+                                  WHEN 25. " EXPORT (same as 15 — avoid OTHERS double qty)
+
+                                    READ TABLE lt_/sapapo/loc_1 TRANSPORTING NO FIELDS WITH KEY locid = lw_dcdrv-locid
+                                                                                                locno = lw_dcdrv-locno BINARY SEARCH.
+                                    IF sy-subrc = 0.
+                                      lv_demand_plus_promo_qty = ( lv_export_qty - lv_dummy_qty ) * lw_output-ntbk_qty.
+                                      lv_demand_plus_dummy_qty = ( lv_demand_qty - lv_dummy_qty ).
+                                      IF lv_demand_plus_dummy_qty NE 0.
+                                        lw_output1-ntbk_qty      = lv_demand_plus_promo_qty / lv_demand_plus_dummy_qty.
+                                      ENDIF.
+                                      lw_output1-zvtweg        = lw_dcdrv-zvtweg.
+                                      lw_output1-ntbk_cat      = lw_output-ntbk_cat.
+                                      lw_output1-ntbk_logic    = lw_output-ntbk_logic.
+                                      lw_output1-ntbk_site     = lw_output-ntbk_site.
+                                      lw_output1-ntbk_matnr    = lw_output-ntbk_matnr.
+                                      lw_output1-ntbk_locfr    = lw_output-ntbk_locfr.
+                                      APPEND lw_output1 TO lt_output_tmp1.
+                                      CLEAR  lw_output1.
+                                    ENDIF.
+                                  WHEN OTHERS. " non domestic and non exports scenario/"added by omkar more/mahesh pathak on 04.12.2025  CD:8085121 TR:AD1K917417
+
+                                    READ TABLE lt_/sapapo/loc_1 TRANSPORTING NO FIELDS WITH KEY locid = lw_dcdrv-locid
+                                                                                                locno = lw_dcdrv-locno BINARY SEARCH.
+                                    IF sy-subrc = 0.
+                                      lv_demand_plus_promo_qty = ( lv_non_domes_export_qty - lv_dummy_qty ) * lw_output-ntbk_qty.
+                                    ELSE.
+*                                  lv_demand_plus_promo_qty = ( lv_non_domes_export_qty  * lw_output-ntbk_qty ).
+*------------------------------------------Cursor Code Start----------------------------------------
+*                                      lv_demand_plus_promo_qty = lv_non_domes_export_qty.
+                                      lv_demand_plus_promo_qty = lv_non_domes_export_qty * lw_output-ntbk_qty.
+*------------------------------------------Cursor Code End----------------------------------------
+                                    ENDIF.
+                                    lv_demand_plus_dummy_qty = ( lv_demand_qty - lv_dummy_qty ).
+                                    IF lv_demand_plus_dummy_qty NE 0.
+                                      lw_output1-ntbk_qty      = lv_demand_plus_promo_qty / lv_demand_plus_dummy_qty.
+                                    ENDIF.
+                                    lw_output1-zvtweg        = lw_dcdrv-zvtweg.
+                                    lw_output1-ntbk_cat      = lw_output-ntbk_cat.
+                                    lw_output1-ntbk_logic    = lw_output-ntbk_logic.
+                                    lw_output1-ntbk_site     = lw_output-ntbk_site.
+                                    lw_output1-ntbk_matnr    = lw_output-ntbk_matnr.
+                                    lw_output1-ntbk_locfr    = lw_output-ntbk_locfr.
+                                    APPEND lw_output1 TO lt_output_tmp1.
+                                    CLEAR  lw_output1.
+                                ENDCASE.
+                              ENDIF.
+                            ENDIF.
+                          ENDLOOP.
+                        ENDIF.
+                        " start of copied FM logic from old FM:ZAPO_NTBK_PROD
+                      ELSEIF  <lfs_ref>-ntbk_matnr IS NOT INITIAL AND <lfs_ref>-ntbk_locfr IS INITIAL.
+
+                        LOOP AT lt_snpoppma ASSIGNING <lfs_snpoppma> WHERE  sessionid = is_session-sessionid
+                                                                       AND  matid = lw_matid.
+                          LOOP AT lt_snpopbct_con ASSIGNING <lfs_snpopbct_con> WHERE sessionid = <lfs_snpoppma>-sessionid
+                                                                                 AND proid = <lfs_snpoppma>-proid.
+
+                            LOOP AT lt_plandrv ASSIGNING <lfs_plandrv> WHERE sessionid = <lfs_snpoppma>-sessionid
+                                                                         AND bucke = <lfs_snpopbct_con>-bucke .
+                              lw_output-ntbk_mth = <lfs_plandrv>-date_mthyr.
+                              lw_output-ntbk_qty     =  <lfs_snpoppma>-outin *  <lfs_snpopbct_con>-produ.
+                              lw_output_1-ntbk_matnr = <lfs_ref>-ntbk_matnr .
+                              lw_output_1-ntbk_locfr = <lfs_ref>-ntbk_locfr.
+                              lw_output_1-spart = <lfs_ref>-div.
+                              lw_output_1-prodn = lw_output-ntbk_qty.
+                              lw_output_1-prodh1 = <lfs_ref>-pdh1.
+                              lw_output_1-prodh2 = <lfs_ref>-pdh2.
+                              lw_output_1-bucke = <lfs_snpopbct_con>-bucke.
+                              CONDENSE lw_output_1-bucke.
+                              COLLECT lw_output_1 INTO lt_intout.
+                              COLLECT lw_output INTO  lt_output_tmp.
+                            ENDLOOP.
+                          ENDLOOP.
+                        ENDLOOP.
+                        " end of copied FM logic from old FM:ZAPO_NTBK_PROD
+" BEGIN: Cursor Generated Code - Bucket-wise demand redistribution for Case 2 (matnr only)
+                        " Single demand loop using pre-built lt_demand_by_bucke summary (no extra lt_plandrv loop)
+                        CLEAR lw_output1.
+                        READ TABLE lt_/sapapo/snpopdmn TRANSPORTING NO FIELDS WITH KEY matid = lw_matid BINARY SEARCH.
+                        IF sy-subrc = 0.
+                          lv_tabix = sy-tabix.
+
+                          LOOP AT lt_/sapapo/snpopdmn INTO lw_/sapapo/snpopdmn FROM lv_tabix.
+                            IF lw_/sapapo/snpopdmn-matid NE lw_matid.
+                              EXIT.
+                            ENDIF.
+"* BEGIN: Cursor Generated Code <- monthwise demand totals calculation 21.01.2026 / author - omkar more CD:8087269 TR:AD1K917472
+                            " Get month for this bucket from plandrv
+                            READ TABLE lt_plandrv ASSIGNING <lfs_plandrv>
+                              WITH KEY bucke = lw_/sapapo/snpopdmn-bucke BINARY SEARCH.
+                            IF sy-subrc NE 0.
+                              CONTINUE.
+                            ENDIF.
+
+                            " Get MONTH-level demand totals from pre-built summary
+                            CLEAR lw_demand_by_month.
+                            READ TABLE lt_demand_by_month INTO lw_demand_by_month
+                              WITH KEY matid      = lw_matid
+                                       date_mthyr = <lfs_plandrv>-date_mthyr BINARY SEARCH.
+                            IF sy-subrc NE 0.
+                            CONTINUE.
+                            ENDIF.
+
+                            lv_domestic_qty         = lw_demand_by_month-domestic_qty.
+                            lv_export_qty           = lw_demand_by_month-export_qty.
+                            lv_non_domes_export_qty = lw_demand_by_month-non_domes_export_qty.
+                            lv_dummy_qty            = lw_demand_by_month-dummy_qty.
+                            lv_demand_qty           = lv_domestic_qty + lv_export_qty + lv_non_domes_export_qty.
+                            IF lv_demand_qty IS INITIAL.
+                            CONTINUE.
+                            ENDIF.
+
+                            CLEAR: lv_demand_plus_promo_qty, lv_demand_plus_dummy_qty, lw_output.
+                            " Read production for the correct month
+                            READ TABLE lt_output_tmp INTO lw_output
+                              WITH KEY ntbk_matnr = <lfs_ref>-ntbk_matnr
+                                       ntbk_mth   = <lfs_plandrv>-date_mthyr.
+                            IF sy-subrc = 0.
+                              lw_output1-ntbk_mth = lw_output-ntbk_mth.
+"* END: Cursor Generated Code <- monthwise demand totals calculation 21.01.2026 / author - omkar more CD:8087269 TR:AD1K917472
+                              CLEAR lw_dcdrv.
+                              READ TABLE lt_dcdrv INTO lw_dcdrv WITH KEY locid = lw_/sapapo/snpopdmn-locid BINARY SEARCH.
+                              IF sy-subrc = 0.
+
+                                CASE lw_dcdrv-zvtweg.
+                                  WHEN 10. " DOMESTIC
+                                    "soc by omkar more/mahesh pathak on 04.12.2025  CD:8085121 TR:AD1K917417
+                                    READ TABLE lt_/sapapo/loc_1 TRANSPORTING NO FIELDS WITH KEY locid = lw_dcdrv-locid
+                                                                                                locno = lw_dcdrv-locno BINARY SEARCH.
+                                    IF sy-subrc = 0.
+                                      lv_demand_plus_promo_qty = ( lv_domestic_qty - lv_dummy_qty ) * lw_output-ntbk_qty.
+                                    ELSE.
+                                      lv_demand_plus_promo_qty = ( lv_domestic_qty * lw_output-ntbk_qty ).
+                                    ENDIF.
+                                    "eoc by omkar more/mahesh pathak on 04.12.2025  CD:8085121 TR:AD1K917417
+                                    lv_demand_plus_dummy_qty = ( lv_demand_qty - lv_dummy_qty ).
+                                    IF lv_demand_plus_dummy_qty NE 0.
+                                      lw_output1-ntbk_qty      = lv_demand_plus_promo_qty / lv_demand_plus_dummy_qty.
+                                    ENDIF.
+                                    lw_output1-zvtweg        = lw_dcdrv-zvtweg.
+                                    lw_output1-ntbk_cat      = lw_output-ntbk_cat.
+                                    lw_output1-ntbk_logic    = lw_output-ntbk_logic.
+                                    lw_output1-ntbk_site     = lw_output-ntbk_site.
+                                    lw_output1-ntbk_matnr    = lw_output-ntbk_matnr.
+                                    lw_output1-ntbk_locfr    = lw_output-ntbk_locfr.
+                                    APPEND lw_output1 TO lt_output_tmp1.
+                                    CLEAR  lw_output1.
+                                  WHEN 15. " EXPORT
+                                  WHEN 20. " EXPORT (same as 15 — avoid OTHERS double qty)
+                                  WHEN 25. " EXPORT (same as 15 — avoid OTHERS double qty)
+
+                                    READ TABLE lt_/sapapo/loc_1 TRANSPORTING NO FIELDS WITH KEY locid = lw_dcdrv-locid
+                                                                                                locno = lw_dcdrv-locno BINARY SEARCH. "added by omkar more/mahesh pathak on 04.12.2025  CD:8085121 TR:AD1K917417
+                                    IF sy-subrc = 0.
+                                      lv_demand_plus_promo_qty = ( lv_export_qty - lv_dummy_qty ) * lw_output-ntbk_qty.
+                                      lv_demand_plus_dummy_qty = ( lv_demand_qty - lv_dummy_qty ).
+                                      IF lv_demand_plus_dummy_qty NE 0.
+                                        lw_output1-ntbk_qty      = lv_demand_plus_promo_qty / lv_demand_plus_dummy_qty.
+                                      ENDIF.
+                                      lw_output1-zvtweg        = lw_dcdrv-zvtweg.
+                                      lw_output1-ntbk_cat      = lw_output-ntbk_cat.
+                                      lw_output1-ntbk_logic    = lw_output-ntbk_logic.
+                                      lw_output1-ntbk_site     = lw_output-ntbk_site.
+                                      lw_output1-ntbk_matnr    = lw_output-ntbk_matnr.
+                                      lw_output1-ntbk_locfr    = lw_output-ntbk_locfr.
+                                      APPEND lw_output1 TO lt_output_tmp1.
+                                      CLEAR  lw_output1.
+                                    ENDIF.
+                                  WHEN OTHERS. " non domestic and non exports scenario/"added by omkar more/mahesh pathak on 04.12.2025  CD:8085121 TR:AD1K917417
+                                    READ TABLE lt_/sapapo/loc_1 TRANSPORTING NO FIELDS WITH KEY locid = lw_dcdrv-locid
+                                                                                                locno = lw_dcdrv-locno BINARY SEARCH.
+                                    IF sy-subrc = 0.
+                                      lv_demand_plus_promo_qty = ( lv_non_domes_export_qty - lv_dummy_qty ) * lw_output-ntbk_qty.
+                                    ELSE.
+*                                      lv_demand_plus_promo_qty = ( lv_non_domes_export_qty  * lw_output-ntbk_qty ).
+*------------------------------------------Cursor Code Start----------------------------------------
+*                                      lv_demand_plus_promo_qty = lv_non_domes_export_qty.
+                                      lv_demand_plus_promo_qty = lv_non_domes_export_qty * lw_output-ntbk_qty.
+*------------------------------------------Cursor Code End----------------------------------------
+                                    ENDIF.
+                                    lv_demand_plus_dummy_qty = ( lv_demand_qty - lv_dummy_qty ).
+                                    IF lv_demand_plus_dummy_qty NE 0.
+                                      lw_output1-ntbk_qty      = lv_demand_plus_promo_qty / lv_demand_plus_dummy_qty.
+                                    ENDIF.
+                                    lw_output1-zvtweg        = lw_dcdrv-zvtweg.
+                                    lw_output1-ntbk_cat      = lw_output-ntbk_cat.
+                                    lw_output1-ntbk_logic    = lw_output-ntbk_logic.
+                                    lw_output1-ntbk_site     = lw_output-ntbk_site.
+                                    lw_output1-ntbk_matnr    = lw_output-ntbk_matnr.
+                                    lw_output1-ntbk_locfr    = lw_output-ntbk_locfr.
+                                    APPEND lw_output1 TO lt_output_tmp1.
+                                    CLEAR  lw_output1.
+                                ENDCASE.
+                              ENDIF.
+                            ENDIF.
+                          ENDLOOP.
+                        ENDIF.
+                        " start of copied FM logic from old FM:ZAPO_NTBK_PROD
+                      ELSEIF  <lfs_ref>-ntbk_locfr IS NOT INITIAL AND <lfs_ref>-ntbk_matnr IS INITIAL.
+                        LOOP AT lt_snpoppma ASSIGNING <lfs_snpoppma> WHERE  sessionid = is_session-sessionid
+                                                                      AND  locid = lw_locid.
+                          LOOP AT lt_snpopbct_con ASSIGNING <lfs_snpopbct_con> WHERE sessionid = <lfs_snpoppma>-sessionid
+                                                                                 AND proid = <lfs_snpoppma>-proid.
+
+                            LOOP AT lt_plandrv ASSIGNING <lfs_plandrv> WHERE sessionid = <lfs_snpoppma>-sessionid
+                                                                         AND bucke = <lfs_snpopbct_con>-bucke .
+                              lw_output-ntbk_mth = <lfs_plandrv>-date_mthyr.
+                              lw_output-ntbk_qty = <lfs_snpoppma>-outin *  <lfs_snpopbct_con>-produ.
+                              lw_output_1-ntbk_matnr = <lfs_ref>-ntbk_matnr .
+                              lw_output_1-ntbk_locfr = <lfs_ref>-ntbk_locfr.
+                              lw_output_1-spart = <lfs_ref>-div.
+                              lw_output_1-prodh1 = <lfs_ref>-pdh1.
+                              lw_output_1-prodh2 = <lfs_ref>-pdh2.
+                              lw_output_1-prodn = lw_output-ntbk_qty.
+                              lw_output_1-bucke = <lfs_snpopbct_con>-bucke.
+                              CONDENSE lw_output_1-bucke.
+                              COLLECT lw_output_1 INTO lt_intout.
+                              COLLECT lw_output   INTO lt_output_tmp.
+                            ENDLOOP.
+                          ENDLOOP.
+                        ENDLOOP.
+                        " end of copied FM logic from old FM:ZAPO_NTBK_PROD
+" BEGIN: Cursor Generated Code - Bucket-wise demand redistribution for Case 3 (locfr only)
+                        " Single demand loop using pre-built lt_demand_by_bucke summary (no extra lt_plandrv loop)
+                        CLEAR lw_output1.
+                        READ TABLE lt_/sapapo/snpopdmn TRANSPORTING NO FIELDS WITH KEY matid = lw_matid BINARY SEARCH.
+                        IF sy-subrc = 0.
+                          lv_tabix = sy-tabix.
+
+                          LOOP AT lt_/sapapo/snpopdmn INTO lw_/sapapo/snpopdmn FROM lv_tabix.
+                            IF lw_/sapapo/snpopdmn-matid NE lw_matid.
+                              EXIT.
+                            ENDIF.
+"* BEGIN: Cursor Generated Code <- monthwise demand totals calculation 21.01.2026 / author - omkar more CD:8087269 TR:AD1K917472
+                            " Get month for this bucket from plandrv
+                            READ TABLE lt_plandrv ASSIGNING <lfs_plandrv>
+                              WITH KEY bucke = lw_/sapapo/snpopdmn-bucke BINARY SEARCH.
+                            IF sy-subrc NE 0.
+                              CONTINUE.
+                            ENDIF.
+
+                            " Get MONTH-level demand totals from pre-built summary
+                            CLEAR lw_demand_by_month.
+                            READ TABLE lt_demand_by_month INTO lw_demand_by_month
+                              WITH KEY matid      = lw_matid
+                                       date_mthyr = <lfs_plandrv>-date_mthyr BINARY SEARCH.
+                            IF sy-subrc NE 0.
+                            CONTINUE.
+                            ENDIF.
+
+                            lv_domestic_qty         = lw_demand_by_month-domestic_qty.
+                            lv_export_qty           = lw_demand_by_month-export_qty.
+                            lv_non_domes_export_qty = lw_demand_by_month-non_domes_export_qty.
+                            lv_dummy_qty            = lw_demand_by_month-dummy_qty.
+                            lv_demand_qty           = lv_domestic_qty + lv_export_qty + lv_non_domes_export_qty.
+                            IF lv_demand_qty IS INITIAL.
+                            CONTINUE.
+                            ENDIF.
+
+                            CLEAR: lv_demand_plus_promo_qty, lv_demand_plus_dummy_qty, lw_output.
+                            " Read production for the correct month
+                            READ TABLE lt_output_tmp INTO lw_output
+                              WITH KEY ntbk_matnr = <lfs_ref>-ntbk_matnr
+                                       ntbk_mth   = <lfs_plandrv>-date_mthyr.
+                            IF sy-subrc = 0.
+                              lw_output1-ntbk_mth = lw_output-ntbk_mth.
+"* END: Cursor Generated Code <- monthwise demand totals calculation 21.01.2026 / author - omkar more CD:8087269 TR:AD1K917472
+                              CLEAR lw_dcdrv.
+                              READ TABLE lt_dcdrv INTO lw_dcdrv WITH KEY locid = lw_/sapapo/snpopdmn-locid BINARY SEARCH.
+                              IF sy-subrc = 0.
+
+                                CASE lw_dcdrv-zvtweg.
+                                  WHEN 10. " DOMESTIC
+                                    "soc by omkar more/mahesh pathak on 04.12.2025  CD:8085121 TR:AD1K917417
+                                    READ TABLE lt_/sapapo/loc_1 TRANSPORTING NO FIELDS WITH KEY locid = lw_dcdrv-locid
+                                                                                                locno = lw_dcdrv-locno BINARY SEARCH.
+                                    IF sy-subrc = 0.
+                                      lv_demand_plus_promo_qty  = ( lv_domestic_qty - lv_dummy_qty ) * lw_output-ntbk_qty.
+                                    ELSE.
+                                      lv_demand_plus_promo_qty = ( lv_domestic_qty * lw_output-ntbk_qty ).
+                                    ENDIF.
+                                    "eoc by omkar more/mahesh pathak on 04.12.2025  CD:8085121 TR:AD1K917417
+                                    lv_demand_plus_dummy_qty = ( lv_demand_qty - lv_dummy_qty ).
+                                    IF lv_demand_plus_dummy_qty NE 0.
+                                      lw_output1-ntbk_qty      = lv_demand_plus_promo_qty / lv_demand_plus_dummy_qty.
+                                    ENDIF.
+                                    lw_output1-zvtweg        = lw_dcdrv-zvtweg.
+                                    lw_output1-ntbk_cat      = lw_output-ntbk_cat.
+                                    lw_output1-ntbk_logic    = lw_output-ntbk_logic.
+                                    lw_output1-ntbk_site     = lw_output-ntbk_site.
+                                    lw_output1-ntbk_matnr    = lw_output-ntbk_matnr.
+                                    lw_output1-ntbk_locfr    = lw_output-ntbk_locfr.
+                                    APPEND lw_output1 TO lt_output_tmp1.
+                                    CLEAR  lw_output1.
+                                  WHEN 15. " EXPORT
+                                  WHEN 20. " EXPORT (same as 15 — avoid OTHERS double qty)
+                                  WHEN 25. " EXPORT (same as 15 — avoid OTHERS double qty)
+                                    READ TABLE lt_/sapapo/loc_1 TRANSPORTING NO FIELDS WITH KEY locid = lw_dcdrv-locid
+                                                                                                locno = lw_dcdrv-locno BINARY SEARCH. "added by omkar more/mahesh pathak on 04.12.2025  CD:8085121 TR:AD1K917417
+                                    IF sy-subrc = 0.
+                                      lv_demand_plus_promo_qty = ( lv_export_qty - lv_dummy_qty ) * lw_output-ntbk_qty.
+                                      lv_demand_plus_dummy_qty = ( lv_demand_qty - lv_dummy_qty ).
+                                      IF lv_demand_plus_dummy_qty NE 0.
+                                        lw_output1-ntbk_qty      = lv_demand_plus_promo_qty / lv_demand_plus_dummy_qty.
+                                      ENDIF.
+                                      lw_output1-zvtweg        = lw_dcdrv-zvtweg.
+                                      lw_output1-ntbk_cat      = lw_output-ntbk_cat.
+                                      lw_output1-ntbk_logic    = lw_output-ntbk_logic.
+                                      lw_output1-ntbk_site     = lw_output-ntbk_site.
+                                      lw_output1-ntbk_matnr    = lw_output-ntbk_matnr.
+                                      lw_output1-ntbk_locfr    = lw_output-ntbk_locfr.
+                                      APPEND lw_output1 TO lt_output_tmp1.
+                                      CLEAR  lw_output1.
+                                    ENDIF.
+                                  WHEN OTHERS. " non domestic and non exports scenario/"added by omkar more/mahesh pathak on 04.12.2025  CD:8085121 TR:AD1K917417
+                                    READ TABLE lt_/sapapo/loc_1 TRANSPORTING NO FIELDS WITH KEY locid = lw_dcdrv-locid
+                                                                                                locno = lw_dcdrv-locno BINARY SEARCH.
+                                    IF sy-subrc = 0.
+                                      lv_demand_plus_promo_qty = ( lv_non_domes_export_qty - lv_dummy_qty ) * lw_output-ntbk_qty.
+                                    ELSE.
+*                                      lv_demand_plus_promo_qty = ( lv_non_domes_export_qty  * lw_output-ntbk_qty ).
+*------------------------------------------Cursor Code Start----------------------------------------
+*                                      lv_demand_plus_promo_qty = lv_non_domes_export_qty.
+                                      lv_demand_plus_promo_qty = lv_non_domes_export_qty * lw_output-ntbk_qty.
+*------------------------------------------Cursor Code End----------------------------------------
+                                    ENDIF.
+                                    lv_demand_plus_dummy_qty = ( lv_demand_qty - lv_dummy_qty ).
+                                    IF lv_demand_plus_dummy_qty NE 0.
+                                      lw_output1-ntbk_qty      = lv_demand_plus_promo_qty / lv_demand_plus_dummy_qty.
+                                    ENDIF.
+                                    lw_output1-zvtweg        = lw_dcdrv-zvtweg.
+                                    lw_output1-ntbk_cat      = lw_output-ntbk_cat.
+                                    lw_output1-ntbk_logic    = lw_output-ntbk_logic.
+                                    lw_output1-ntbk_site     = lw_output-ntbk_site.
+                                    lw_output1-ntbk_matnr    = lw_output-ntbk_matnr.
+                                    lw_output1-ntbk_locfr    = lw_output-ntbk_locfr.
+                                    APPEND lw_output1 TO lt_output_tmp1.
+                                    CLEAR  lw_output1.
+                                ENDCASE.
+                              ENDIF.
+                            ENDIF.
+                          ENDLOOP.
+                        ENDIF.
+                      ENDIF .
+                    ENDLOOP.
+                    " start of copied FM logic from old FM:ZAPO_NTBK_PROD
+                    CLEAR lt_output_tmp[].
+                    lt_output_tmp = lt_output_tmp1.
+                    IF  lt_output_tmp IS NOT INITIAL.
+                      lv_ntbk_index = <lfs_input>-ntbk_index.
+                      LOOP AT lt_output_tmp ASSIGNING <lfs_output>.
+                        <lfs_output>-ntbk_index = lv_ntbk_index.
+                        lv_ntbk_index = lv_ntbk_index + 1.
+                        APPEND <lfs_output> TO et_output.
+                      ENDLOOP.
+                      IF lt_intout IS NOT INITIAL.
+                        APPEND LINES OF lt_intout TO et_intout.
+                      ENDIF.
+                      CLEAR: lt_output_tmp, lt_intout.
+                    ENDIF.
+                  ENDLOOP.
+
+                  IF et_output IS NOT INITIAL.
+                    SORT et_output BY ntbk_mth zvtweg ntbk_qty.
+                    DELETE ADJACENT DUPLICATES FROM et_output COMPARING ntbk_mth zvtweg ntbk_qty.
+                  ENDIF.
+
+                  IF et_intout IS NOT INITIAL.
+                    SORT et_intout BY ntbk_matnr ntbk_locfr bucke spart prodh1 prodh2.
+                    DELETE ADJACENT DUPLICATES FROM et_intout COMPARING ntbk_matnr ntbk_locfr bucke spart prodh1 prodh2.
+                  ENDIF.
+                ENDIF.
+              ENDIF.
+            ENDIF.
+          ENDIF.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+  " end of copied FM logic from old FM:ZAPO_NTBK_PROD
+
+ENDFUNCTION.
